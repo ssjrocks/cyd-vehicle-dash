@@ -29,10 +29,10 @@ It started as a way to find out what a no-name OBD2 dongle actually does and wha
 - **Over-the-air updates**: from the web page, with `curl`, or via ArduinoOTA.
 
 **Behaviour**:
-- Remembers the dongle and reconnects automatically. It listens for the dongle's Bluetooth advertisements first (a 3 s scan every ~10 s) and only connects when it's there, so a parked car doesn't tie up the radio.
+- Remembers the dongle and reconnects automatically. For BLE dongles it listens for the dongle's advertisements first (a 3 s scan) and only connects when it's there, so a parked car doesn't tie up the radio. The dash build checks every ~10 s; the other builds back off to every 5 minutes. Auto-reconnect pauses while the web page is open, so it doesn't stall the page (use its *Reconnect now* button).
 - Starts straight to the dash; WiFi comes up in the background.
 - **Screen sleep:** with no dongle connected and no touch for 1 minute, the backlight turns off and drawing stops. A touch wakes it (that touch doesn't press anything), and so does the dongle connecting. The chip stays awake meanwhile: deep sleep would switch off the radio that listens for the dongle.
-- Records the reason for every restart, plus a crash backtrace in flash.
+- Records the reason for every restart, plus a crash backtrace in flash. A watchdog reboots the board if the main loop stalls for 150 s, and the next boot logs what it was doing.
 
 ## Hardware
 
@@ -94,8 +94,9 @@ The web page's *Firmware update* box does both steps. A failed or interrupted up
 ## Using it
 
 1. Power the board from a USB socket in the car and plug in the dongle. Make sure no phone is connected to the dongle.
-2. **First time only:** on **Bridge → Scan**, tap the dongle (✓ marks likely OBD adapters). After that it reconnects by itself, retrying at least every 30 s.
+2. **First time only:** on **Bridge → Scan**, tap the dongle (✓ marks likely OBD adapters). After that it reconnects by itself, usually within 10–15 s of the dongle powering up.
 3. With the ignition on, the dash comes alive once the ECU answers. On first connect it finds the supported PIDs and checks whether the adapter supports the faster "one reply expected" mode.
+4. Parked with no dongle, the screen goes dark after a minute. Touch it, or switch the ignition on, to wake it. WiFi, the web page and the bridge stay available while it's dark.
 
 **WiFi**:
 - **Home** mode joins your network and adds the hotspot if it isn't found within 20 s.
@@ -163,6 +164,9 @@ xtensa-esp32s3-elf-addr2line -pfiaC -e elf/obd_probe-<ver>-s3.elf <pc> <bt...>
 - **NimBLE** (S3/C3) ignores the connect-timeout argument; a failed BLE connect always takes about 30 s.
 - **ELM327 clones** cut off long KWP replies at about 84 bytes, and some answer `OK` to every AT command, including ones they don't implement.
 - **K-line throughput:** roughly 4 requests a second, about 250 ms each.
+- **LVGL 8.4:** setting a table's row count to 0 crashes it, and `%f` in `lv_label_set_text_fmt` prints a literal `f` unless `LV_SPRINTF_USE_FLOAT` is on.
+
+More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (tasks, locks, settings) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 
