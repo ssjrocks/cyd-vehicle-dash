@@ -4,6 +4,10 @@ A touchscreen car dashboard and OBD2 diagnostics bridge built on an ESP32 and a 
 
 It started as a way to find out what a no-name OBD2 dongle actually does and what a 2005 Holden/Opel Astra will report, and turned into a stand-in for a broken instrument cluster: speedometer, tachometer, coolant and intake temperatures, battery voltage and fault codes on a 4.3" touchscreen, with a WiFi web page and a raw ELM327 TCP bridge so phones, laptops and apps can still reach the car.
 
+![The Dash screen on the Waveshare 4.3" display, waiting for the dongle](docs/dash.jpg)
+
+*The Dash screen, waiting for the dongle. Photo taken just before the small coolant and intake gauges were simplified to plain blue-to-red arcs, with readings and captions outside the gauge.*
+
 > **Not a certified instrument cluster.** It only shows what the engine ECU reports over OBD2. It cannot show turn signals, high beam, oil pressure, brake, ABS, airbag or fuel level, and on slow K-line cars speed updates about twice a second. Use it alongside the car's own warning lamps.
 
 ## Features
