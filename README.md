@@ -6,7 +6,7 @@ It started as a way to find out what a no-name OBD2 dongle actually does and wha
 
 ![The Dash screen on the Waveshare 4.3" display, waiting for the dongle](docs/dash.jpg)
 
-*The Dash screen, waiting for the dongle. Photo taken just before the small coolant and intake gauges were simplified to plain blue-to-red arcs, with readings and captions outside the gauge.*
+*The Dash screen, waiting for the dongle: speedometer, tachometer, coolant and intake-air gauges in the centre, and the battery voltage / connection status at the bottom.*
 
 > **Not a certified instrument cluster.** It only shows what the engine ECU reports over OBD2. It cannot show turn signals, high beam, oil pressure, brake, ABS, airbag or fuel level, and on slow K-line cars speed updates about twice a second. Use it alongside the car's own warning lamps.
 
