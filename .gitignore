@@ -1,0 +1,6 @@
+# Local credentials
+obd_probe/secrets.h
+# Build output (keep your own copies of flashed .elf files for crash decoding)
+obd_probe/build/
+obd_probe/build-*/
+obd_probe/elf/
