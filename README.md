@@ -28,7 +28,11 @@ It started as a way to find out what a no-name OBD2 dongle actually does and wha
 - **JSON API** for scripting (see below).
 - **Over-the-air updates**: from the web page, with `curl`, or via ArduinoOTA.
 
-**Behaviour**: remembers the dongle and reconnects automatically; starts straight to the dash, with WiFi coming up in the background; records the reason for every restart, plus a crash backtrace in flash.
+**Behaviour**:
+- Remembers the dongle and reconnects automatically. It listens for the dongle's Bluetooth advertisements first (a 3 s scan every ~10 s) and only connects when it's there, so a parked car doesn't tie up the radio.
+- Starts straight to the dash; WiFi comes up in the background.
+- **Screen sleep:** with no dongle connected and no touch for 1 minute, the backlight turns off and drawing stops. A touch wakes it (that touch doesn't press anything), and so does the dongle connecting. The chip stays awake meanwhile: deep sleep would switch off the radio that listens for the dongle.
+- Records the reason for every restart, plus a crash backtrace in flash.
 
 ## Hardware
 

@@ -29,6 +29,24 @@ static uint8_t gtAddr = 0;
 static bool rotated = true;
 static volatile uint8_t activeTab = TAB_DASH;
 
+// Sleep: with no dongle link and no touch for a minute the backlight goes off and drawing stops. Touch, or the
+// dongle connecting (auto-reconnect keeps listening for it), wakes it. The chip itself stays awake: deep sleep
+// would switch off the radio that listens for the dongle.
+static const uint32_t SLEEP_AFTER_MS = 60000;
+static volatile bool asleep = false;
+static volatile uint32_t lastActivity = 0;
+static bool swallowTouch = false;  // the touch that wakes the screen must not also press a button
+static uint8_t ioOut = 0x2E;       // CH422G outputs: bit1 touch reset (high = run), bit2 backlight, bit3 LCD reset
+
+void ioWrite(uint8_t v) {
+  ioOut = v;
+  Wire.beginTransmission(CH422G_OUT);
+  Wire.write(v);
+  Wire.endTransmission();
+}
+
+void backlight(bool on) { ioWrite(on ? (ioOut | 0x04) : (ioOut & ~0x04)); }
+
 // ---------------------------------------------------------------- hardware
 
 void ioExpanderInit() {
@@ -42,9 +60,7 @@ void ioExpanderInit() {
   pinMode(TOUCH_INT, OUTPUT);
   digitalWrite(TOUCH_INT, LOW);  // INT low while reset releases -> GT911 at 0x5D
   delay(100);
-  Wire.beginTransmission(CH422G_OUT);
-  Wire.write(0x2E);  // release touch reset
-  Wire.endTransmission();
+  ioWrite(0x2E);  // release touch reset
   delay(200);
   pinMode(TOUCH_INT, INPUT);
 }
@@ -78,6 +94,14 @@ void touchInit() {
   addLog(gtAddr ? 'i' : 'e', gtAddr ? "Touch controller GT911 at 0x" + String(gtAddr, HEX) : String("Touch controller not found on I2C"));
 }
 
+// Raw "is a finger down" check used while asleep (LVGL isn't running then)
+bool touchDown() {
+  uint8_t st;
+  if (!gtAddr || !gtRead(0x814E, &st, 1) || !(st & 0x80)) return false;
+  gtWrite(0x814E, 0);
+  return (st & 0x0F) > 0;
+}
+
 void touchRead(lv_indev_drv_t *, lv_indev_data_t *data) {
   static int16_t lastX = 0, lastY = 0;
   data->state = LV_INDEV_STATE_REL;
@@ -97,6 +121,11 @@ void touchRead(lv_indev_drv_t *, lv_indev_data_t *data) {
       }
     }
     gtWrite(0x814E, 0);
+  }
+  if (data->state == LV_INDEV_STATE_PR) lastActivity = millis();
+  if (swallowTouch) {
+    if (data->state == LV_INDEV_STATE_REL) swallowTouch = false;
+    data->state = LV_INDEV_STATE_REL;
   }
   data->point.x = lastX;
   data->point.y = lastY;
@@ -848,11 +877,39 @@ void statusTick(lv_timer_t *) {
   if (activeTab == TAB_BRIDGE) refreshBridge();
 }
 
+void sleepNow() {  // caller holds lvMux
+  backlight(false);
+  asleep = true;
+  addLog('i', "Screen off: no dongle and idle for " + String(SLEEP_AFTER_MS / 1000) + " s (touch to wake)");
+}
+
+void wakeNow(const char *why) {  // caller holds lvMux
+  asleep = false;
+  lastActivity = millis();
+  swallowTouch = true;
+  lv_obj_invalidate(lv_scr_act());
+  lv_timer_handler();  // redraw before the light comes on
+  backlight(true);
+  addLog('i', String("Screen on: ") + why);
+}
+
 void lvTask(void *) {
+  lastActivity = millis();
   for (;;) {
+    if (asleep) {
+      bool byTouch = touchDown();
+      if (byTouch || linkUp) {
+        RLock l(lvMux, UINT32_MAX);
+        wakeNow(byTouch ? "touch" : "dongle connected");
+      }
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
+    }
     {
       RLock l(lvMux, UINT32_MAX);
       lv_timer_handler();
+      if (linkUp || workerBusy) lastActivity = millis();
+      else if (millis() - lastActivity > SLEEP_AFTER_MS) sleepNow();
     }
     vTaskDelay(pdMS_TO_TICKS(8));
   }

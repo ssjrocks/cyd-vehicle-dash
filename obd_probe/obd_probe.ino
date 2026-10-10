@@ -39,7 +39,7 @@
 #define HAS_LCD 0
 #endif
 
-#define FW_VERSION "1.12.2"
+#define FW_VERSION "1.13.0"
 
 // WiFi credentials and hotspot password live in secrets.h (git-ignored); copy secrets.example.h to start.
 #include "secrets.h"
@@ -639,13 +639,36 @@ void saveDevice(const String &type, const String &addr, uint8_t atype, const Str
   prefs.putString("x2", extra2);
 }
 
+// Auto-reconnect first listens for the saved dongle (passive scan) and only connects when it is advertising:
+// a blind connect to an absent or sleeping dongle ties up the radio for NimBLE's fixed 30 s timeout.
+bool bleAdvertising(const String &addr, uint32_t secs) {
+  bleInit();
+  BLEScan *sc = BLEDevice::getScan();
+  sc->setActiveScan(false);
+  sc->setInterval(100);
+  sc->setWindow(99);
+  BLEScanResults *r = sc->start(secs, false);
+  bool seen = false;
+  for (int i = 0; i < r->getCount() && !seen; i++) seen = r->getDevice(i).getAddress().toString().equalsIgnoreCase(addr);
+  sc->clearResults();
+  return seen;
+}
+
 bool connectSaved() {
   String type = prefs.getString("type", "");
   String addr = prefs.getString("addr", "");
   if (!type.length() || !addr.length()) return false;
   devName = prefs.getString("name", "");
   if (HAVE_SPP && type != btMode) return false;
-  if (type == "ble") return connectBle(addr, prefs.getUChar("atype", 0), prefs.getString("x1", ""), prefs.getString("x2", ""));
+  if (type == "ble") {
+    if (!bleAdvertising(addr, 3)) {
+      RLock cl(connMux, UINT32_MAX);
+      lastConnectError = "Dongle not advertising (ignition off, asleep or out of range)";
+      return false;
+    }
+    addLog('i', "Saved dongle is advertising - connecting");
+    return connectBle(addr, prefs.getUChar("atype", 0), prefs.getString("x1", ""), prefs.getString("x2", ""));
+  }
 #if HAVE_SPP
   if (type == "spp") return connectSpp(addr, prefs.getString("x1", "1234"), prefs.getInt("ch", 0));
 #endif
@@ -669,19 +692,26 @@ void triggerReconnect() {
 }
 
 void autoConnectTask(void *) {
+  String lastOutcome;  // only log when the outcome changes, so a parked car doesn't flood the log
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    bool ok = false;
+    bool ok = false, tried = false;
     {
       RLock ol(opMux, 0);
       if (ol.ok) {
-        addLog('i', "Auto-reconnect to saved dongle (background), free heap " + String(ESP.getFreeHeap() / 1024) + " KB");
+        tried = true;
         ok = connectSaved();
       }
     }
-    autoBackoff = ok ? 20000 : min<uint32_t>(autoBackoff * 2, HAS_LCD ? 30000 : 300000);  // a dash must reconnect quickly
+    autoBackoff = ok ? 20000 : min<uint32_t>(autoBackoff * 2, HAS_LCD ? 10000 : 300000);  // a dash must reconnect quickly (a miss costs a 3 s scan)
     nextAutoTry = millis() + autoBackoff;
-    if (!ok) addLog('i', "Next auto-reconnect in " + String(autoBackoff / 1000) + " s");
+    String outcome;
+    if (tried && !ok) {
+      RLock cl(connMux, UINT32_MAX);
+      outcome = lastConnectError;
+    }
+    if (outcome.length() && outcome != lastOutcome) addLog('i', "Auto-reconnect: " + outcome + " - retrying every " + String(autoBackoff / 1000) + " s");
+    if (tried) lastOutcome = outcome;
     __sync_synchronize();
     bgConnecting = false;
   }

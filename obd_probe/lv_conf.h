@@ -29,6 +29,7 @@
 #define LV_FONT_MONTSERRAT_48 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_16
 
+#define LV_SPRINTF_USE_FLOAT 1  // "%.1f" in lv_label_set_text_fmt (battery voltage)
 #define LV_USE_LOG 0
 #define LV_USE_PERF_MONITOR 0
 #define LV_THEME_DEFAULT_DARK 1
