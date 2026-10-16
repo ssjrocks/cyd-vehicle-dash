@@ -30,6 +30,7 @@ It started as a way to find out what a no-name OBD2 dongle actually does and wha
 
 **Behaviour**:
 - Remembers the dongle and reconnects automatically. For BLE dongles it listens for the dongle's advertisements first (a 3 s scan) and only connects when it's there, so a parked car doesn't tie up the radio. The dash build checks every ~10 s; the other builds back off to every 5 minutes. Auto-reconnect pauses while the web page is open, so it doesn't stall the page (use its *Reconnect now* button).
+- **Stuck-dongle recovery (dash):** if the dongle still answers but the ECU has returned nothing for 20 s, the dash resets the ELM (`ATWS`, `ATSP0`) and sets it up again, backing off to every 5 minutes while the ignition is off. If the dongle stops answering entirely, it warm-starts it and then reconnects Bluetooth. Clones can otherwise stay stuck on NO DATA until unplugged.
 - Starts straight to the dash; WiFi comes up in the background.
 - **Screen sleep:** with no dongle connected and no touch for 1 minute, the backlight turns off and drawing stops. A touch wakes it (that touch doesn't press anything), and so does the dongle connecting. The chip stays awake meanwhile: deep sleep would switch off the radio that listens for the dongle.
 - Records the reason for every restart, plus a crash backtrace in flash. A watchdog reboots the board if the main loop stalls for 150 s, and the next boot logs what it was doing.

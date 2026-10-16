@@ -2,6 +2,13 @@
 
 All versions were developed on 2026-10-10/11. The firmware version is `FW_VERSION` in `obd_probe/obd_probe.ino`.
 
+## 1.14.0 (2026-10-16)
+- **Stuck-dongle recovery** on the dash. The Astra's clone was found answering AT commands but returning NO DATA for every OBD request until its ELM side was reset; the dash now recovers by itself:
+  - No ECU data for 20 s while the dongle still answers: `ATWS`, `ATSP0`, then the normal setup again. The wait doubles each time up to 5 min (ignition off), and returns to 20 s once data flows.
+  - Three commands in a row with no `>` prompt: `ATWS`; if still silent, the Bluetooth link is dropped and re-opened.
+  - Skipped while a TCP bridge client is connected, so its ELM settings aren't reset under it.
+  - Each step is written to the web log.
+
 ## 1.13.0
 - **Screen sleep:** backlight off and drawing paused after 60 s with no dongle and no touch. Wakes on touch (the waking touch doesn't press a button) or when the dongle connects.
 - **Listen-before-connect:** BLE auto-reconnect does a 3 s passive scan for the saved dongle and only connects when it's advertising. Retries every 10 s on the dash build, and logs only when the result changes.

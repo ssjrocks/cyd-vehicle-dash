@@ -39,7 +39,7 @@
 #define HAS_LCD 0
 #endif
 
-#define FW_VERSION "1.13.0"
+#define FW_VERSION "1.14.0"
 
 // WiFi credentials and hotspot password live in secrets.h (git-ignored); copy secrets.example.h to start.
 #include "secrets.h"

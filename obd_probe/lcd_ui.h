@@ -331,6 +331,19 @@ static bool fastSuffix = false;        // ELM "expect 1 reply" suffix works -> n
 static volatile uint32_t lastGood = 0;
 static volatile bool workerBusy = false;
 
+// Stuck-dongle recovery. The Astra's clone has been seen (2026-10-16) answering AT commands but returning
+// NO DATA for every OBD request until its ELM side was reset with ATWS; a clone can also stop giving a ">"
+// prompt at all while Bluetooth stays connected. The worker watches for both and escalates.
+static const uint32_t RECOVER_FIRST_MS = 20000, RECOVER_MAX_MS = 300000;
+static uint32_t ecuOkAt = 0;                      // last valid ECU reply, or when the link came up
+static uint32_t recoverWait = RECOVER_FIRST_MS;   // no-ECU time before an ELM reset; doubles while resets don't help
+static uint8_t muteCmds = 0;                      // commands in a row that got no ">" prompt
+
+void ecuOk() {
+  ecuOkAt = millis();
+  recoverWait = RECOVER_FIRST_MS;
+}
+
 struct ScanHit {
   String addr, name;
   int rssi;
@@ -536,6 +549,7 @@ bool cmd(const String &c, String &raw, uint32_t timeout = 5000) {
   bool to;
   uint32_t el;
   raw = runCmd(c, timeout, to, el);
+  muteCmds = to ? muteCmds + 1 : 0;
   return true;
 }
 
@@ -549,6 +563,7 @@ bool readPid(uint8_t pid, std::vector<uint8_t> &d, uint32_t timeout = 2000) {
   if (!cmd(c, raw, timeout)) return false;
   if (pidData(raw, 1, pid, d)) {
     lastGood = millis();
+    ecuOk();
     return true;
   }
   return false;
@@ -589,6 +604,41 @@ void initAdapter() {
     buildDataTable();
   }
   needInit = false;
+  ecuOk();
+}
+
+// Escalates when the dongle or the ECU side goes quiet (see ecuOkAt above). Called from the worker only.
+void checkRecovery() {
+  if (!linkUp || (bridgeClient && bridgeClient.connected())) return;  // never reset a TCP client's ELM settings
+  String raw;
+  if (muteCmds >= 3) {
+    addLog('e', "Dongle stopped answering (no prompt) - warm-starting it (ATWS)");
+    muteCmds = 0;
+    cmd("ATWS", raw, 3000);
+    if (muteCmds == 0) {
+      needInit = true;
+      fastSuffix = false;
+      return;
+    }
+    addLog('e', "Dongle still silent - dropping the Bluetooth link to reconnect");
+    {
+      RLock ol(opMux, 8000);
+      disconnectDongle();
+    }
+    muteCmds = 0;
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    if (!linkUp && !bgConnecting && autoTaskHandle) triggerReconnect();
+    return;
+  }
+  if (millis() - ecuOkAt > recoverWait) {
+    addLog('i', "No ECU data for " + String(recoverWait / 1000) + " s - resetting the ELM (ATWS, ATSP0) and re-initialising");
+    cmd("ATWS", raw, 3000);
+    cmd("ATSP0", raw, 2000);
+    needInit = true;
+    fastSuffix = false;
+    ecuOkAt = millis();
+    recoverWait = min<uint32_t>(recoverWait * 2, RECOVER_MAX_MS);  // ignition off: back off to every 5 min
+  }
 }
 
 void pollDash() {
@@ -787,7 +837,11 @@ void worker(void *) {
   for (;;) {
     if (linkUp != wasUp) {
       wasUp = linkUp;
-      if (linkUp) needInit = true;
+      if (linkUp) {
+        needInit = true;
+        ecuOk();
+        muteCmds = 0;
+      }
     }
     Job j;
     bool idle = !linkUp || bgConnecting || (activeTab != TAB_DASH && activeTab != TAB_DATA);
@@ -819,6 +873,7 @@ void worker(void *) {
       continue;
     }
     if (idle) continue;
+    checkRecovery();
     if (needInit) {
       initAdapter();
       if (needInit) vTaskDelay(pdMS_TO_TICKS(3000));  // no ECU answer yet: ignition probably off
